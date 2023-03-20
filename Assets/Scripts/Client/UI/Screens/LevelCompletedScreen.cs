@@ -17,7 +17,7 @@ namespace Client.UI.Screens
         [SerializeField] private TMP_Text levelName;
         [SerializeField] private Transform light0;
 
-        public event Action OnClickNext;
+        public event Action ClickNextEvent;
 
         private void Awake()
         {
@@ -64,12 +64,12 @@ namespace Client.UI.Screens
 
         private void Complete()
         {
-            OnClickNext?.Invoke();
+            ClickNextEvent?.Invoke();
         }
 
         private void OnDestroy()
         {
-            OnClickNext = null;
+            ClickNextEvent = null;
         }
     }
 }

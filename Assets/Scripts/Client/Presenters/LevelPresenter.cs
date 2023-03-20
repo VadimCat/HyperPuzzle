@@ -57,9 +57,15 @@ namespace Client.Presenters
             this.audioService = audioService;
             this.compliments = compliments;
 
+            model.Health.EventValueChanged += OnHealthChanged;
             model.EventTurnStart += OnTurnStart;
             model.EventPieceSelected += OnPieceSelected;
-            model.EventLevelCompleted += OnEventLevelCompleted;
+            model.EventLevelCompled += OnEventLevelCompleted;
+        }
+
+        private void OnHealthChanged(int value, int prevValue)
+        {
+            levelScreen.UpdateHealthCount(value);
         }
 
         public void BuildLevel()
@@ -90,7 +96,8 @@ namespace Client.Presenters
             model.LogAnalyticsLevelStart();
             levelScreen = (LevelScreen)screenNavigator.CurrentScreen;
             levelScreen.SetLevelName($"Level {model.LevelCount + 1}");
-
+            levelScreen.InitHealthCount(model.Health.Value);
+            
             model.StartTurn();
 
             updateService.Add(this);
@@ -116,8 +123,6 @@ namespace Client.Presenters
             modelAnimator.Enqueue(() =>
             {
                 posToCellHolder[highlightPos].Highlight();
-
-                Debug.LogError(pointToCellView.Count);
                 
                 foreach (var point in selection)
                 {
@@ -138,7 +143,6 @@ namespace Client.Presenters
                 pointToCellView.Remove(pos, out var cell);
 
                 List<UniTask> anims = new List<UniTask>(3);
-                Debug.LogError(isRight);
                 if (isRight)
                 {
                     cell.transform.SetParent(posToCellHolder[pos].CellRoot);
@@ -161,6 +165,18 @@ namespace Client.Presenters
 
         private async void OnEventLevelCompleted()
         {
+            model.Health.EventValueChanged += OnHealthChanged;
+            model.EventTurnStart += OnTurnStart;
+            model.EventPieceSelected += OnPieceSelected;
+            model.EventLevelCompled += OnEventLevelCompleted;
+
+            foreach (var value in pointToCellView.Values)
+            {
+                value.ResetInput();
+            }
+            
+            pointToCellView.Clear();
+
             model.LogAnalyticsLevelFinish();
             levelsLoopProgress.IncLevel();
             updateService.Remove(this);

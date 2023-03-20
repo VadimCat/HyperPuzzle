@@ -73,7 +73,7 @@ namespace Client.States
             //HACK
             levelData.difficulty = viewData.difficulty;
             var levelModel = new Level(context.GetService<IAnalytics>(), levelData,
-                context.GetService<ISaveDataContainer>(), viewData.cutSize, viewData.selectionCount);
+                context.GetService<ISaveDataContainer>(), viewData.cutSize, viewData.selectionCount, 3);
 
             var levelPresenter =
                 new LevelPresenter(view, levelModel, screenNavigator, context.GetService<UpdateService>(), levelsConfig,

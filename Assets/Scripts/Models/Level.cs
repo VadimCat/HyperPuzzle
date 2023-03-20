@@ -19,21 +19,24 @@ namespace Models
         private List<Vector2Int> notAssembledParts;
         private List<Vector2Int> assembledParts;
         private List<Vector2Int> allParts;
-        
+
         public Vector2Int CutSize => cutSize;
 
         public bool[,] PartsState => partsState;
 
-        public event Action<Vector2Int, Vector2Int[]> EventTurnStart;
-        public event Action EventLevelCompleted;
-        public event Action<Vector2Int, bool> EventPieceSelected;
+        public readonly ReactiveProperty<int> Health;
 
+        public event Action<Vector2Int, Vector2Int[]> EventTurnStart;
+        public event Action<Vector2Int, bool> EventPieceSelected;
+        
         public Level(IAnalytics analytics, LevelData levelData, ISaveDataContainer saveDataContainer,
-            Vector2Int cutSize, int partsPerSelection) : base(analytics, levelData, saveDataContainer)
+            Vector2Int cutSize, int partsPerSelection, int health) : base(analytics, levelData, saveDataContainer)
         {
             this.cutSize = cutSize;
             this.partsPerSelection = partsPerSelection;
 
+            Health = new ReactiveProperty<int>(health);
+            
             GeneratePartsArray();
         }
 
@@ -65,7 +68,7 @@ namespace Models
             }
             else
             {
-                OnComplete();
+                Complete();
             }
         }
 
@@ -79,6 +82,12 @@ namespace Models
             }
             else
             {
+                Health.Value--;
+                if (Health.Value == 0)
+                {
+                    Complete();
+                    return;
+                }
                 EventPieceSelected?.Invoke(select, false);
             }
         }

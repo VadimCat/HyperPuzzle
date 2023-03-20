@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using Client.Views.Level;
 // using Client.Presenters;
 using Ji2Core.Core;
+using Ji2Core.Core.Audio;
 using Ji2Core.Core.States;
 using UI.Background;
 
@@ -27,10 +28,12 @@ namespace Client.States
 
             dict[typeof(LoadLevelState)] = new LoadLevelState(stateMachine, context, context.SceneLoader(),
                 context.ScreenNavigator, context.GetService<LevelsConfig>(), context.GetService<BackgroundService>());
-            // dict[typeof(GameState)] = new GameState(context.GetService<LoadingPresenterFactory>());
 
-            dict[typeof(GameState)] = new GameState(context.ScreenNavigator);
+            dict[typeof(GameState)] = new GameState(stateMachine, context.ScreenNavigator);
             
+            dict[typeof(LevelCompletedState)] = new LevelCompletedState(stateMachine, context.ScreenNavigator,
+                context.LevelsLoopProgress, context.GetService<LevelsConfig>(), context.GetService<AudioService>());
+
             return dict;
         }
     }
