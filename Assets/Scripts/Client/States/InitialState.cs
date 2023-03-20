@@ -1,10 +1,11 @@
 ﻿using Cysharp.Threading.Tasks;
 using Facebook.Unity;
+using Ji2.CommonCore.SaveDataContainer;
 using Ji2Core.Core;
 using Ji2Core.Core.ScreenNavigation;
 using Ji2Core.Core.States;
-using Ji2Core.UI.Screens;
 using UI.Screens;
+using UnityEngine;
 
 namespace Client.States
 {
@@ -13,39 +14,41 @@ namespace Client.States
         private const string GAME_SCENE_NAME = "LevelScene";
         private readonly StateMachine stateMachine;
         private readonly ScreenNavigator screenNavigator;
-        private readonly SceneLoader sceneLoader;
+        private readonly ISaveDataContainer saveDataContainer;
+        private readonly LevelsLoopProgress loopProgress;
 
         private LoadingScreen loadingScreen;
-    
-        public InitialState(StateMachine stateMachine, ScreenNavigator screenNavigator, SceneLoader sceneLoader)
+
+        public InitialState(StateMachine stateMachine, ScreenNavigator screenNavigator, LevelsLoopProgress loopProgress, ISaveDataContainer saveDataContainer)
         {
             this.stateMachine = stateMachine;
             this.screenNavigator = screenNavigator;
-            this.sceneLoader = sceneLoader;
+            this.loopProgress = loopProgress;
+            this.saveDataContainer = saveDataContainer;
         }
 
-        public async UniTask Exit()
+        public UniTask Exit()
         {
-            await screenNavigator.CloseScreen<LoadingScreen>();
+            return UniTask.CompletedTask;
         }
 
         public async UniTask Enter()
         {
-            var loadingTask = sceneLoader.LoadScene(GAME_SCENE_NAME);
             var facebookTask = LoadFb();
-            loadingScreen = await screenNavigator.PushScreen<LoadingScreen>();
-        
-            // sceneLoader.OnProgressUpdate += UpdateProgress;
-            await UniTask.WhenAll(loadingTask, facebookTask);
-            
-            
-            // sceneLoader.OnProgressUpdate -= UpdateProgress;
-        
-            await screenNavigator.CloseScreen<LoadingScreen>();
 
-            loadingScreen = null;
+            saveDataContainer.Load();
+            loopProgress.Load();
+            // tutorialService.TryRunSteps();
+            
+            await screenNavigator.PushScreen<LoadingScreen>();
+            await facebookTask;
 
-            stateMachine.Enter<GameState>();
+            float fakeLoadingTime = 5;
+#if !UNITY_EDITOR
+            fakeLoadingTime = 5;
+#endif
+            stateMachine.Enter<LoadLevelState, LoadLevelState.Payload>(
+                new LoadLevelState.Payload(loopProgress.GetNextLevelData(), fakeLoadingTime));
         }
 
         private async UniTask LoadFb()

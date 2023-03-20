@@ -1,3 +1,5 @@
+using Client.States;
+using Client.Views.Level;
 using Core.Compliments;
 using Ji2.CommonCore;
 using Ji2.CommonCore.SaveDataContainer;
@@ -9,6 +11,7 @@ using Ji2Core.Core.ScreenNavigation;
 using Ji2Core.Core.States;
 using Ji2Core.Core.UserInput;
 using Ji2Core.Plugins.AppMetrica;
+using Models;
 using UI.Background;
 using UnityEngine;
 
@@ -16,16 +19,14 @@ namespace Client
 {
     public class Bootstrap : BootstrapBase
     {
-        // [SerializeField] private LevelConfig levelConfig;
+        [SerializeField] private LevelsConfig levelsConfig;
 
         [SerializeField] private ScreenNavigator screenNavigator;
         [SerializeField] private BackgroundService backgroundService;
         [SerializeField] private UpdateService updateService;
         [SerializeField] private TextCompliments complimentsWordsService;
         [SerializeField] private AudioService audioService;
-
         [SerializeField] private TutorialPointerView tutorialPointerView;
-
 
         private AppSession appSession;
 
@@ -47,9 +48,14 @@ namespace Client
             InstallSceneLoader();
             InstallCompliments();
             InstallBackgrounds();
-
+            
+            levelsConfig.Bootstrap();
+            context.Register(levelsConfig);
+            
+            context.Register(new LevelsLoopProgress(context.SaveDataContainer, levelsConfig.GetLevelsOrder()));
+            
             var appStateMachine = InstallStateMachine();
-            InstallTutorial();
+            // InstallTutorial();
 
             // context.Register(levelConfig);
 
@@ -68,14 +74,14 @@ namespace Client
         {
             appStateMachine.Load();
             appSession = new AppSession(appStateMachine);
-            // appSession.StateMachine.Enter<InitialState>();
+            appSession.StateMachine.Enter<InitialState>();
         }
 
         private StateMachine InstallStateMachine()
         {
-            // StateMachine appStateMachine = new StateMachine(new StateFactory(context));
-            // context.Register(appStateMachine);
-            // return appStateMachine;
+            StateMachine appStateMachine = new StateMachine(new StateFactory(context));
+            context.Register(appStateMachine);
+            return appStateMachine;
             return null;
         }
 
@@ -97,9 +103,9 @@ namespace Client
 
         private void InstallAnalytics()
         {
-            var analytics = new Analytics();
+            IAnalytics analytics = new Analytics();
             analytics.AddLogger(new YandexMetricaLogger(AppMetrica.Instance));
-            context.Register(analytics);
+            context.Register<IAnalytics>(analytics);
         }
 
         private void InstallUpdatesService()
@@ -110,7 +116,7 @@ namespace Client
         private void InstallSaveDataContainer()
         {
             ISaveDataContainer saveDataContainer = new PlayerPrefsSaveDataContainer();
-            context.Register(saveDataContainer);
+            context.Register<ISaveDataContainer>(saveDataContainer);
         }
 
         private void InstallCamera()

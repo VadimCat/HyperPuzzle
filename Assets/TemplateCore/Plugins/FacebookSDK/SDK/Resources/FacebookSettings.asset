@@ -14,11 +14,11 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   selectedAppIndex: 0
   clientTokens:
-  - 
+  - 802018af669abf695a3907ea9338ffe5
   appIds:
-  - 
+  - 3500718383546109
   appLabels:
-  - 
+  - Hyper Puzzle
   cookie: 1
   logging: 1
   status: 1
