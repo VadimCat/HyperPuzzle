@@ -19,7 +19,7 @@ namespace Client.Presenters
 {
     public class LevelPresenter : IUpdatable
     {
-        public event Action LevelCompleted;
+        public event Action EventLevelCompleted;
 
         private readonly LevelView view;
         private readonly Level model;
@@ -109,11 +109,6 @@ namespace Client.Presenters
         private void ProcessSelection(Vector2Int point)
         {
             model.ProcessSelection(point);
-
-            foreach (var cell in pointToCellView.Values)
-            {
-                cell.ResetInput();
-            }
         }
 
         private void OnTurnStart(Vector2Int highlightPos, Vector2Int[] selection)
@@ -122,6 +117,8 @@ namespace Client.Presenters
             {
                 posToCellHolder[highlightPos].Highlight();
 
+                Debug.LogError(pointToCellView.Count);
+                
                 foreach (var point in selection)
                 {
                     var cell = Object.Instantiate(levelsViewConfig.CellView, view.SelectionBar);
@@ -139,26 +136,24 @@ namespace Client.Presenters
             modelAnimator.Enqueue(() =>
             {
                 pointToCellView.Remove(pos, out var cell);
-                pointToCellView.Remove(pos);
 
                 List<UniTask> anims = new List<UniTask>(3);
-
+                Debug.LogError(isRight);
                 if (isRight)
                 {
                     cell.transform.SetParent(posToCellHolder[pos].CellRoot);
                     anims.Add(cell.transform.DOLocalMove(Vector3.zero, .5f).ToUniTask());
+
+                    foreach (var key in pointToCellView.Keys)
+                    {
+                        anims.Add(pointToCellView[key].Fade());
+                    }
+                    pointToCellView.Clear();
                 }
                 else
                 {
                     anims.Add(cell.Fade());
                 }
-
-                foreach (var key in pointToCellView.Keys)
-                {
-                    anims.Add(pointToCellView[key].Fade());
-                }
-
-                pointToCellView.Clear();
 
                 return UniTask.WhenAll(anims);
             });
@@ -176,7 +171,7 @@ namespace Client.Presenters
             // audioService.PlaySfxAsync(AudioClipName.WinFX);
             Object.Destroy(view.gameObject);
 
-            LevelCompleted?.Invoke();
+            EventLevelCompleted?.Invoke();
         }
     }
 }

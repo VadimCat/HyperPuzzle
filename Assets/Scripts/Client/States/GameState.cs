@@ -22,12 +22,18 @@ namespace Client.States
         public async UniTask Enter(Payload payload)
         {
             await screenNavigator.PushScreen<LevelScreen>();
+            payload.levelPresenter.EventLevelCompleted += OnComplete; 
             payload.levelPresenter.StartLevel();
+        }
+
+        private void OnComplete()
+        {
+            
         }
 
         public UniTask Exit()
         {
-            return UniTask.CompletedTask;
+            return screenNavigator.CloseScreen<LevelScreen>();
         }
     }
 }
