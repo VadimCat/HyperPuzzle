@@ -60,7 +60,7 @@ namespace Client.Presenters
             model.Health.EventValueChanged += OnHealthChanged;
             model.EventTurnStart += OnTurnStart;
             model.EventPieceSelected += OnPieceSelected;
-            model.EventLevelCompled += OnEventLevelCompleted;
+            model.EventLevelCompleted += OnEventLevelCompleted;
         }
 
         private void OnHealthChanged(int value, int prevValue)
@@ -118,7 +118,7 @@ namespace Client.Presenters
             model.ProcessSelection(point);
         }
 
-        private void OnTurnStart(Vector2Int highlightPos, Vector2Int[] selection)
+        private void OnTurnStart(Vector2Int highlightPos, List<Vector2Int> selection)
         {
             modelAnimator.Enqueue(() =>
             {
@@ -168,7 +168,7 @@ namespace Client.Presenters
             model.Health.EventValueChanged += OnHealthChanged;
             model.EventTurnStart += OnTurnStart;
             model.EventPieceSelected += OnPieceSelected;
-            model.EventLevelCompled += OnEventLevelCompleted;
+            model.EventLevelCompleted += OnEventLevelCompleted;
 
             foreach (var value in pointToCellView.Values)
             {
