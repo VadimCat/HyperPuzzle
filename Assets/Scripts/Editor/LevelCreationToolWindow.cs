@@ -1,7 +1,8 @@
-using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using Client;
+using Client.Views.Level;
 using UnityEditor;
 using UnityEngine;
 
@@ -9,18 +10,27 @@ namespace Editor
 {
     public class LevelCreationToolWindow : EditorWindow
     {
-        private const string BaseArtPath = "Assets/Art/LevelsArt/";
+        protected const string BaseArtPath = "Assets/Art/Levels/";
+        protected static LevelsConfig storageBase;
 
-        private static GameObject levelBaseGrey;
-        private static GameObject levelBaseColor;
-        // private static LevelsViewDataStorageBase<> storageBase;
-        private static Material baseDirtMaterial;
-
-        private static Sprite colorSprite;
-        private static Sprite maskSprite;
-
+        private static Sprite levelSprite;
+        private static Sprite backSprite;
         private static string levelName;
-        
+        private static Vector2Int defaultCutSize;
+
+        private static void DrawGUI()
+        {
+            EditorGUILayout.LabelField("LevelsStorage");
+            storageBase = (LevelsConfig)EditorGUILayout.ObjectField(storageBase, typeof(LevelsConfig), true);
+            EditorGUILayout.LabelField("Level name");
+            levelName = EditorGUILayout.TextField(levelName);
+            EditorGUILayout.LabelField("Level sprite");
+            levelSprite = (Sprite)EditorGUILayout.ObjectField(levelSprite, typeof(Sprite), true);
+            backSprite = (Sprite)EditorGUILayout.ObjectField(backSprite, typeof(Sprite), true);
+
+            defaultCutSize = EditorGUILayout.Vector2IntField("CutSize", defaultCutSize);
+        }
+
         [MenuItem("Tools/LevelCreationTool")]
         private static void ShowWindow()
         {
@@ -32,18 +42,8 @@ namespace Editor
 
         private static void SetDefaultData()
         {
-            var levelDataStorage = AssetDatabase.FindAssets("t:LevelsViewDataStorage")[0];
-            // storageBase = AssetDatabase.LoadAssetAtPath<LevelsViewDataStorageBase<>>(
-            //     AssetDatabase.GUIDToAssetPath(levelDataStorage));
-
-            var material = AssetDatabase.FindAssets("dirt t:Material")[0];
-            baseDirtMaterial = AssetDatabase.LoadAssetAtPath<Material>(AssetDatabase.GUIDToAssetPath(material));
-
-            var levelColor = AssetDatabase.FindAssets("LevelViewBase t:Prefab")[0];
-            levelBaseGrey = AssetDatabase.LoadAssetAtPath<GameObject>(AssetDatabase.GUIDToAssetPath(levelColor));
-            
-            var levelGrey = AssetDatabase.FindAssets("LevelViewBaseColor t:Prefab")[0];
-            levelBaseColor = AssetDatabase.LoadAssetAtPath<GameObject>(AssetDatabase.GUIDToAssetPath(levelGrey));
+            var levelDataStorage = AssetDatabase.FindAssets("t:LevelsConfig")[0];
+            storageBase = AssetDatabase.LoadAssetAtPath<LevelsConfig>(AssetDatabase.GUIDToAssetPath(levelDataStorage));
         }
 
         private void OnGUI()
@@ -52,12 +52,12 @@ namespace Editor
 
             if (GUILayout.Button("Add level"))
             {
-                // if (storageBase.LevelIdExists(levelName))
-                // {
-                //     throw new LevelExistsException(levelName);
-                // }
+                if (storageBase.LevelIdExists(levelName))
+                {
+                    throw new LevelExistsException(levelName);
+                }
 
-                CreateLevel(levelName, maskSprite, colorSprite);
+                CreateLevel(levelName, levelSprite, defaultCutSize, backSprite);
             }
 
             if (GUILayout.Button("Fill levels automaticly"))
@@ -70,58 +70,32 @@ namespace Editor
 
                 var spritePathes = pathes.ToArray();
 
-                Func<string, bool> greyFilter = s => s.Contains("grey");
-                Func<string, bool> colorFilter = s => !s.Contains("grey");
-
-                var greySprites = GetSpritesFromPathesByFilter(spritePathes, greyFilter);
-                var colorSprites = GetSpritesFromPathesByFilter(spritePathes, colorFilter);
-                foreach (var spr in greySprites)
+                var levelSprites = GetSpritesFromPathes(spritePathes);
+                foreach (var spr in levelSprites)
                 {
-                    var sprName = spr.name.Replace("-grey", string.Empty);
-
-                    var findIndex = colorSprites.FindIndex(sp => sp.name == sprName);
-                    if (findIndex != -1)
-                    {
-                        CreateLevel(sprName, spr, colorSprites[findIndex]);
-                    }
+                    CreateLevel(spr.name, spr,defaultCutSize, backSprite);
                 }
             }
         }
 
-        private void CreateLevel(string levelName, Sprite maskSprite, Sprite colorSprite)
+        private void CreateLevel(string id, Sprite sprite, Vector2Int size, Sprite backSprite)
         {
-            var material = CreateLevelMaterial(levelName, maskSprite);
-            var maskSavedPref = CreateMaskPref(levelName, material);
-            var colorSavedPref = CreateColorPref(levelName, colorSprite, material);
+            var config = CreateInstance<LevelConfig>();
+            config.name = id;
+            config.SetData(id, sprite, size, backSprite);
 
-            AddConfig(levelName, maskSavedPref, colorSavedPref, colorSprite);
+            var path = Path.Combine("Assets\\Configs\\Levels", $"{id}_ViewData.asset");
+
+            storageBase.AddLevel(config);
+            EditorUtility.SetDirty(storageBase);
+            
+            AssetDatabase.CreateAsset(config, path);
+            AssetDatabase.SaveAssets();
         }
 
-        private static void DrawGUI()
+        private static List<Sprite> GetSpritesFromPathes(string[] spritePathes)
         {
-            EditorGUILayout.LabelField("LevelsStorage");
-            // storageBase = (LevelsViewDataStorageBase<>)EditorGUILayout.ObjectField(storageBase, typeof(LevelsViewDataStorageBase<>), true);
-            EditorGUILayout.LabelField("Base and dirt material");
-            baseDirtMaterial = (Material)EditorGUILayout.ObjectField(baseDirtMaterial, typeof(Material), true);
-            EditorGUILayout.LabelField("LevelConfigBasePrefab");
-            levelBaseGrey = (GameObject)EditorGUILayout.ObjectField(levelBaseGrey, typeof(GameObject), true);
-            EditorGUILayout.LabelField("LevelConfigBasePrefab");
-            levelBaseColor = (GameObject)EditorGUILayout.ObjectField(levelBaseColor, typeof(GameObject), true);
-
-            EditorGUILayout.LabelField("Level name");
-            levelName = EditorGUILayout.TextField(levelName);
-
-            EditorGUILayout.LabelField("Color sprite");
-            colorSprite = (Sprite)EditorGUILayout.ObjectField(colorSprite, typeof(Sprite), true);
-            EditorGUILayout.LabelField("Mask sprite");
-            maskSprite = (Sprite)EditorGUILayout.ObjectField(maskSprite, typeof(Sprite), true);
-        }
-
-        private static List<Sprite> GetSpritesFromPathesByFilter(string[] spritePathes, Func<string, bool> filter)
-        {
-            var greyAtlases = (from path in spritePathes
-                where filter(path)
-                select path);
+            var greyAtlases = from path in spritePathes select path;
 
             List<Sprite> sprites = new List<Sprite>();
             foreach (var atlas in greyAtlases)
@@ -135,65 +109,6 @@ namespace Editor
             }
 
             return sprites;
-        }
-
-        private static void AddConfig(string levelName, GameObject maskSavedPref, GameObject colorSavedPref,
-            Sprite resultSprite)
-        {
-            // var levelAsset = CreateInstance<LevelViewData>();
-            // levelAsset.SetData(levelName, maskSavedPref.GetComponent<ColoringLevelView>(),
-            //     colorSavedPref.GetComponent<ColoringLevelView>(), resultSprite);
-
-            var path = Path.Combine("Assets\\Configs\\Levels", $"{levelName}ViewData.asset");
-
-            // AssetDatabase.CreateAsset(levelAsset, path);
-            // EditorUtility.SetDirty(levelAsset);
-
-            // storageBase.AddLevel(levelAsset);
-            // EditorUtility.SetDirty(storageBase);
-
-            AssetDatabase.Refresh();
-        }
-
-        private static GameObject CreateColorPref(string levelName, Sprite ColorSprite, Material material)
-        {
-            var path = Path.Combine("Assets\\Prefabs\\Levels", levelName, $"{levelName}Color.prefab");
-
-            var levelPref = PrefabUtility.InstantiatePrefab(levelBaseColor) as GameObject;
-            var sprites = levelPref.GetComponentsInChildren<SpriteRenderer>();
-            sprites[1].sprite = ColorSprite;//HACK
-            
-            levelPref.GetComponentInChildren<MeshRenderer>().material = material;
-            
-            var colorSavedPref = PrefabUtility.SaveAsPrefabAsset(levelPref, path);
-            DestroyImmediate(levelPref);
-            return colorSavedPref;
-        }
-
-        private static GameObject CreateMaskPref(string levelName, Material material)
-        {
-            string path = Path.Combine("Assets\\Prefabs\\Levels", levelName, $"{levelName}Dirt.prefab");
-            
-            var levelPref = PrefabUtility.InstantiatePrefab(levelBaseGrey) as GameObject;
-            var sprites = levelPref.GetComponentsInChildren<MeshRenderer>();
-            sprites[1].material = material;
-
-            var maskSavedPref = PrefabUtility.SaveAsPrefabAsset(levelPref, path);
-            DestroyImmediate(levelPref);
-            return maskSavedPref;
-        }
-        
-        private Material CreateLevelMaterial(string levelName, Sprite sprite)
-        {
-            var path = Path.Combine("Assets\\Prefabs\\Levels", levelName);
-            Material mat = new Material(baseDirtMaterial.shader);
-            mat.name = levelName;
-            mat.CopyPropertiesFromMaterial(baseDirtMaterial);
-            mat.mainTexture = sprite.texture;
-            AssetDatabase.CreateFolder("Assets\\Prefabs\\Levels", levelName);
-            path = Path.Combine(path, $"{mat.name}.mat");
-            AssetDatabase.CreateAsset(mat, path);
-            return mat;
         }
 
         private void OnFocus()
