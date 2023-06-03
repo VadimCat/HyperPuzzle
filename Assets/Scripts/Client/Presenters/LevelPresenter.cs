@@ -1,6 +1,6 @@
 using System;
 using System.Collections.Generic;
-using System.Threading.Tasks;
+using Client.PuzzleCutMasksGenerator;
 using Client.UI.Screens;
 using Client.Views.Level;
 using Core.Compliments;
@@ -10,7 +10,6 @@ using Ji2.CommonCore;
 using Ji2.Presenters;
 using Ji2Core.Core.Audio;
 using Ji2Core.Core.ScreenNavigation;
-using Ji2Core.Core.UserInput;
 using Models;
 using UnityEngine;
 using Object = UnityEngine.Object;
@@ -29,7 +28,7 @@ namespace Client.Presenters
         private readonly LevelsLoopProgress levelsLoopProgress;
         private readonly AudioService audioService;
         private readonly ICompliments compliments;
-
+        private readonly PuzzleCutter puzzleCutter = new();
 
         private readonly ModelAnimator modelAnimator = new();
         private readonly Dictionary<Vector2Int, CellViewHolder> posToCellHolder = new();
@@ -40,13 +39,14 @@ namespace Client.Presenters
         private LevelScreen levelScreen;
         private int tilesSet;
 
-        private Dictionary<Vector2Int, CellView> pointToCellView = new(3);
+        private readonly Dictionary<Vector2Int, CellView> pointToCellView = new(3);
+        private Dictionary<Vector2Int, Sprite> puzzleSprites;
 
         public Level Model => model;
 
         public LevelPresenter(LevelView view, Level model, ScreenNavigator screenNavigator,
             UpdateService updateService, LevelsConfig levelsViewConfig, LevelsLoopProgress levelsLoopProgress,
-            AudioService audioService, ICompliments compliments, InputService inputService)
+            AudioService audioService, ICompliments compliments)
         {
             this.view = view;
             this.model = model;
@@ -56,10 +56,11 @@ namespace Client.Presenters
             this.levelsLoopProgress = levelsLoopProgress;
             this.audioService = audioService;
             this.compliments = compliments;
-
+            
             model.Health.EventValueChanged += OnHealthChanged;
-            model.EventTurnStart += OnTurnStart;
             model.EventPieceSelected += OnPieceSelected;
+            model.EventTurnStart += OnTurnStart;
+
             model.EventLevelCompleted += OnEventLevelCompleted;
         }
 
@@ -71,6 +72,9 @@ namespace Client.Presenters
         public void BuildLevel()
         {
             viewData = levelsViewConfig.GetData(model.Name).ViewData((int)model.Difficulty);
+            var texture = viewData.image.texture;
+            puzzleSprites = puzzleCutter.GetTiles(new Vector2Int(texture.width, texture.height), model.CutSize);
+
             view.SetGridSizeByData(viewData);
 
             for (var y = 0; y < model.CutSize.y; y++)
@@ -81,12 +85,13 @@ namespace Client.Presenters
                 if (model.PartsState[x, y])
                 {
                     var cellView = Object.Instantiate(levelsViewConfig.CellView, view.GridRoot);
-                    cellView.SetData(viewData, position);
+                    cellView.SetData(viewData, position, puzzleSprites[position] ?? default);
                 }
                 else
                 {
-                    var cellHolder = Object.Instantiate(levelsViewConfig.CellHolder, view.GridRoot);
-                    posToCellHolder[new Vector2Int(x, y)] = cellHolder;
+                    CellViewHolder cellHolder = Object.Instantiate(levelsViewConfig.CellHolder, view.GridRoot);
+                    cellHolder.SetData(viewData, position, puzzleSprites[position]);
+                    posToCellHolder[position] = cellHolder;
                 }
             }
         }
@@ -97,7 +102,7 @@ namespace Client.Presenters
             levelScreen = (LevelScreen)screenNavigator.CurrentScreen;
             levelScreen.SetLevelName($"Level {model.LevelCount + 1}");
             levelScreen.InitHealthCount(model.Health.Value);
-            
+
             model.StartTurn();
 
             updateService.Add(this);
@@ -122,18 +127,18 @@ namespace Client.Presenters
         {
             modelAnimator.Enqueue(() =>
             {
-                posToCellHolder[highlightPos].Highlight();
-                
+                posToCellHolder[highlightPos].Highlight().Forget();
+
                 foreach (var point in selection)
                 {
                     var cell = Object.Instantiate(levelsViewConfig.CellView, view.SelectionBar);
-                    cell.SetData(viewData, point);
+                    cell.SetData(viewData, point, puzzleSprites[point]);
                     cell.SetSize(view.CellSize);
 
                     cell.EventClick += () => ProcessSelection(point);
                     pointToCellView[point] = cell;
                 }
-            });
+            }).Forget();
         }
 
         private void OnPieceSelected(Vector2Int pos, bool isRight)
@@ -152,6 +157,7 @@ namespace Client.Presenters
                     {
                         anims.Add(pointToCellView[key].Fade());
                     }
+
                     pointToCellView.Clear();
                 }
                 else
@@ -160,7 +166,7 @@ namespace Client.Presenters
                 }
 
                 return UniTask.WhenAll(anims);
-            });
+            }).Forget();
         }
 
         private async void OnEventLevelCompleted()
@@ -174,14 +180,14 @@ namespace Client.Presenters
             {
                 value.ResetInput();
             }
-            
+
             pointToCellView.Clear();
 
             model.LogAnalyticsLevelFinish();
             levelsLoopProgress.IncLevel();
             updateService.Remove(this);
 
-            modelAnimator.Enqueue(view.AnimateWin);
+            modelAnimator.Enqueue(view.AnimateWin).Forget();
             await modelAnimator.AwaitAllAnimationsEnd();
 
             // audioService.PlaySfxAsync(AudioClipName.WinFX);

@@ -1,55 +1,257 @@
+using System;
+using System.Collections.Generic;
+using System.Linq;
+using Ji2.Utils;
 using UnityEngine;
-using UnityEngine.UI;
+using Random = UnityEngine.Random;
 
 namespace Client.PuzzleCutMasksGenerator
 {
-    public class PuzzleCutter : MonoBehaviour
+    public class PuzzleCutter
     {
-        [SerializeField] private Image img;
-        [SerializeField] private SpriteRenderer spr;
+        private const float MIN_R = .135f;
+        private const float MAX_R = .15f;
 
-        private const float minR = .25f;
-        private const float maxR = .35f;
-
-        private const float minTongueOffsetR = .5f;
-        private const float maxOffsetR = 1.5f;
+        private const float MIN_TONGUE_OFFSET_R = .45f;
+        private const float MAX_TONGUE_OFFSET_R = .5f;
 
         private const int minSinA = 1;
         private const float maxSinPercentA = .07f;
 
         private const float minSinB = .33f * Mathf.PI;
-        private const float maxSinB = 3 * Mathf.PI;
-
-        private void Awake()
+        private Vector2Int baseCellSize;
+        private bool[,] pointsState;
+        
+        public Dictionary<Vector2Int, Sprite> GetTiles(Vector2Int size, Vector2Int cutSize)
         {
-            bool[,] points = new bool[800, 800];
+            pointsState = new bool[size.x, size.y];
 
-            Vector2Int cutSIze = new Vector2Int(10, 10);
-            Vector2Int baseCellSize = new Vector2Int(points.GetLength(0) / cutSIze.x, points.GetLength(1) / cutSIze.y);
+            baseCellSize = new Vector2Int(pointsState.GetLength(0) / cutSize.x, pointsState.GetLength(1) / cutSize.y);
 
-            SinGraph[] verticalDividerLines = new SinGraph[cutSIze.y - 1];
+            SinGraph[] verticalDividerLines = GenerateVerticalDividers(cutSize);
+            SinGraph[] horizontalDividerLines = GenerateHorizontalDividers(cutSize);
 
-            for (int i = 0; i < verticalDividerLines.Length; i++)
+            ProcessVerticalEllipses(cutSize, verticalDividerLines);
+            ProcessHorizontalEllipses(cutSize, horizontalDividerLines);
+
+            List<Vector2Int> truePoints = new List<Vector2Int>();
+
+            for (int i = 0; i < pointsState.GetLength(0); i++)
             {
-                float a = (int)(Random.Range(0, maxSinPercentA) * baseCellSize.y);
-                a = Mathf.Max(minSinA, a);
-
-                float b = 1 / (points.GetLength(0) / Random.Range(minSinB, maxSinB));
-
-                float c = Random.Range(0, Mathf.PI);
-                int offsetY = baseCellSize.y * (i + 1);
-                verticalDividerLines[i] = new SinGraph(a, b, c, offsetY);
-            }
-
-            for (int i = 0; i < points.GetLength(0); i++)
-            {
-                foreach (var t in verticalDividerLines)
+                for (int j = 0; j < pointsState.GetLength(1); j++)
                 {
-                    int y = t.GetPoint(i);
-                    points[i, y] = true;
+                    if (pointsState[i, j])
+                    {
+                        truePoints.Add(new Vector2Int(i, j));
+                    }
                 }
             }
 
+            foreach (var point in truePoints)
+            {
+                foreach (var dir in Vector2IntUtils.GetVector2IntDirections())
+                {
+                    var pos = point + dir;
+                    if(pos.x < 0 || pos.y < 0 || pos.x >= pointsState.GetLength(0) || pos.y >= pointsState.GetLength(1))
+                        continue;
+
+                    pointsState[pos.x, pos.y] = true;
+                }
+            }
+            
+            var sprites = new Dictionary<Vector2Int, Sprite>();
+            for (int i = 0; i < cutSize.x; i++)
+            for (int j = 0; j < cutSize.x; j++)
+            {
+                sprites[new Vector2Int(i, j)] = GetTile(new Vector2Int(i, j));
+            }
+
+            return sprites;
+        }
+        
+        private Sprite GetTile(Vector2Int tilePos)
+        {
+            var cell = GetTilePixels(tilePos);
+
+            Texture2D tile = new Texture2D((int)(baseCellSize.x * 1.5f), (int)(baseCellSize.y * 1.5f))
+            {
+                filterMode = FilterMode.Point
+            };
+            Vector2Int delta = new Vector2Int((int)((tilePos.x - .25f) * baseCellSize.x),
+                (int)((tilePos.y - .25f) * baseCellSize.y));
+
+            for (int i = 0; i < tile.width; i++)
+            {
+                for (int j = 0; j < tile.height; j++)
+                {
+                    tile.SetPixel(i, j, cell.Contains(new Vector2Int(i, j) + delta) ? Color.green : Color.clear);
+                }
+            }
+
+            tile.Apply();
+
+            return Sprite.Create(tile, new Rect(0, 0, tile.width, tile.height), Vector2.zero, 100);
+        }
+        
+        private HashSet<Vector2Int> GetTilePixels(Vector2Int tile)
+        {
+            var startPoint = new Vector2Int(Mathf.RoundToInt((tile.x + .5f) * baseCellSize.x),
+                Mathf.RoundToInt((tile.y + .5f) * baseCellSize.y));
+
+            HashSet<Vector2Int> usedPoints = new HashSet<Vector2Int> { startPoint };
+            Queue<Vector2Int> pointsToCheck = new Queue<Vector2Int>();
+            pointsToCheck.Enqueue(startPoint);
+
+            while (pointsToCheck.Count > 0)
+            {
+                var point = pointsToCheck.Dequeue();
+                foreach (var direction in Vector2IntUtils.GetVector2IntDirections())
+                {
+                    var checkPoint = point + direction;
+                    if (checkPoint.x >= 0 && checkPoint.x < pointsState.GetLength(0) &&
+                        checkPoint.y >= 0 && checkPoint.y < pointsState.GetLength(1) &&
+                        !pointsState[checkPoint.x, checkPoint.y] && usedPoints.Add(checkPoint))
+                    {
+                        pointsToCheck.Enqueue(checkPoint);
+                    }
+                }
+            }
+
+            return usedPoints;
+        }
+        
+        private void ProcessVerticalEllipses(Vector2Int cutSIze, SinGraph[] verticalDividerLines)
+        {
+            EllipseGraph[] verticalEllipses = new EllipseGraph[cutSIze.y * (cutSIze.x - 1)];
+            int pos = 0;
+            for (int i = 0; i < cutSIze.x - 1; i++)
+            {
+                for (int j = 0; j < cutSIze.y; j++)
+                {
+                    int r = (int)(baseCellSize.y * Random.Range(MIN_R, MAX_R));
+                    float vModifier = Random.Range(1, 1.2f);
+
+                    float range = Random.Range(MIN_TONGUE_OFFSET_R, MAX_TONGUE_OFFSET_R);
+                    int side = SideMultiplier();
+                    Vector2Int offset = new Vector2Int((int)(r * side * range), 0);
+
+                    Vector2Int center = new Vector2Int(baseCellSize.x * (i + 1), (int)(baseCellSize.y * (j + .5f))) +
+                                        offset;
+
+                    verticalEllipses[i * cutSIze.y + j] = new EllipseGraph(center, r, 1, vModifier, side);
+                    pos++;
+                }
+            }
+
+            int count = 0;
+            for (int i = 0; i < cutSIze.x - 1; i++)
+            {
+                for (int j = 0; j < cutSIze.y; j++)
+                {
+                    var ellipse = verticalEllipses[count];
+                    int minY = Int32.MaxValue;
+                    int maxY = Int32.MinValue;
+
+                    var line = verticalDividerLines[i];
+
+                    foreach (var point in ellipse.points)
+                    {
+                        int side = point.x.CompareTo(line.GetPoint(point.y));
+
+                        if (side == ellipse.Side)
+                        {
+                            pointsState[point.x, point.y] = true;
+                        }
+                        else
+                        {
+                            if (point.y < minY)
+                            {
+                                minY = point.y;
+                            }
+                            else if (point.y > maxY)
+                            {
+                                maxY = point.y;
+                            }
+                        }
+                    }
+
+                    for (int k = minY + 1; k < maxY; k++)
+                    {
+                        pointsState[line.GetPoint(k), k] = false;
+                    }
+
+                    count++;
+                }
+            }
+        }
+
+        private void ProcessHorizontalEllipses(Vector2Int cutSIze, SinGraph[] dividerLines)
+        {
+            EllipseGraph[] ellipses = new EllipseGraph[cutSIze.x * (cutSIze.y - 1)];
+            int pos = 0;
+            for (int i = 0; i < cutSIze.y - 1; i++)
+            {
+                for (int j = 0; j < cutSIze.x; j++)
+                {
+                    int r = (int)(baseCellSize.x * Random.Range(MIN_R, MAX_R));
+                    float vModifier = Random.Range(1, 1.2f);
+
+                    float range = Random.Range(MIN_TONGUE_OFFSET_R, MAX_TONGUE_OFFSET_R);
+                    int side = SideMultiplier();
+                    Vector2Int offset = new Vector2Int(0, (int)(r * side * range));
+
+                    Vector2Int center = new Vector2Int((int)(baseCellSize.x * (j + .5f)), baseCellSize.y * (i + 1)) +
+                                        offset;
+
+                    ellipses[i * cutSIze.y + j] = new EllipseGraph(center, r, vModifier, 1, side);
+                    pos++;
+                }
+            }
+
+            int count = 0;
+            for (int i = 0; i < cutSIze.y - 1; i++)
+            {
+                for (int j = 0; j < cutSIze.x; j++)
+                {
+                    var ellipse = ellipses[count];
+                    int minX = Int32.MaxValue;
+                    int maxX = Int32.MinValue;
+
+                    var line = dividerLines[i];
+
+                    foreach (var point in ellipse.points)
+                    {
+                        int side = point.y.CompareTo(line.GetPoint(point.x));
+
+                        if (side == ellipse.Side)
+                        {
+                            pointsState[point.x, point.y] = true;
+                        }
+                        else
+                        {
+                            if (point.x < minX)
+                            {
+                                minX = point.x;
+                            }
+                            else if (point.x > maxX)
+                            {
+                                maxX = point.x;
+                            }
+                        }
+                    }
+
+                    for (int k = minX; k <= maxX; k++)
+                    {
+                        pointsState[k, line.GetPoint(k)] = false;
+                    }
+
+                    count++;
+                }
+            }
+        }
+
+        private SinGraph[] GenerateHorizontalDividers(Vector2Int cutSIze)
+        {
             SinGraph[] horizontalDividerLines = new SinGraph[cutSIze.x - 1];
 
             for (int i = 0; i < horizontalDividerLines.Length; i++)
@@ -57,177 +259,54 @@ namespace Client.PuzzleCutMasksGenerator
                 float a = (int)(Random.Range(0, maxSinPercentA) * baseCellSize.x);
                 a = Mathf.Max(minSinA, a);
 
-                float b = 1 / (points.GetLength(1) / Random.Range(minSinB, maxSinB));
+                float b = 1 / (pointsState.GetLength(1) / Random.Range(minSinB, maxSinB));
 
                 float c = Random.Range(0, Mathf.PI);
                 int offsetX = baseCellSize.x * (i + 1);
                 horizontalDividerLines[i] = new SinGraph(a, b, c, offsetX);
             }
 
-            for (int i = 0; i < points.GetLength(1); i++)
-            {
-                foreach (var t in horizontalDividerLines)
+            foreach (var t in horizontalDividerLines)
+                for (int x = 0; x < pointsState.GetLength(1); x++)
                 {
-                    int x = t.GetPoint(i);
-                    points[x, i] = true;
+                    int y = t.GetPoint(x);
+                    pointsState[x, y] = true;
                 }
-            }
 
-            EllipseGraph[] verticalEllipses = new EllipseGraph[cutSIze.y * (cutSIze.x - 1)];
-
-            for (int i = 0; i < cutSIze.x - 1; i++)
-            {
-                for (int j = 0; j < cutSIze.y; j++)
-                {
-                    Vector2Int center = new Vector2Int((baseCellSize.x + 1) * i, (int)(baseCellSize.y * (j + .5f)));
-                    int r = (int)(baseCellSize.y * Random.Range(minR, maxR));
-                    int a = (int)(r / Random.Range(.8f, 1.2f));
-                    verticalEllipses[i * cutSIze.y + j] = new EllipseGraph(center, r, a);
-                }
-            }
-
-            EllipseGraph[] horizontalEllipses = new EllipseGraph[cutSIze.x * (cutSIze.y - 1)];
-
-            for (int i = 0; i < cutSIze.x; i++)
-            {
-                for (int j = 0; j < cutSIze.y - 1; j++)
-                {
-                    Vector2Int center = new Vector2Int((int)((baseCellSize.x + .5f) * i), baseCellSize.y * (j + 1));
-                    int r = (int)(baseCellSize.y * Random.Range(minR, maxR));
-                    int a = (int)(r / Random.Range(.8f, 1.2f));
-                    horizontalEllipses[i * (cutSIze.y - 1) + j] = new EllipseGraph(center, r, a);
-                }
-            }
-
-            Texture2D texture2D = new Texture2D(points.GetLength(0), points.GetLength(1));
-            for (var i = 0; i < points.GetLength(0); i++)
-            for (var j = 0; j < points.GetLength(1); j++)
-            {
-                var point = points[i, j];
-                texture2D.SetPixel(i, j, point ? Color.black : Color.white);
-            }
-
-            foreach (var ellipse in verticalEllipses)
-            {
-                int p1 = ellipse.center.x - ellipse.r;
-                int p2 = ellipse.center.x + ellipse.r;
-                for (int i = p1; i < p2; i++)
-                {
-                    if (ellipse.TryGetIntersectionPoints(i, out var intersections))
-                    {
-                        foreach (var p in intersections)
-                        {
-                            Debug.LogError(p);
-                            texture2D.SetPixel(p.x, p.y, Color.black);
-                        }
-                    }
-                }
-            }
-            foreach (var ellipse in horizontalEllipses)
-            {
-                int p1 = ellipse.center.x - ellipse.r;
-                int p2 = ellipse.center.x + ellipse.r;
-                for (int i = p1; i < p2; i++)
-                {
-                    if (ellipse.TryGetIntersectionPoints(i, out var intersections))
-                    {
-                        foreach (var p in intersections)
-                        {
-                            Debug.LogError(p);
-                            texture2D.SetPixel(p.x, p.y, Color.black);
-                        }
-                    }
-                }
-            }
-            
-            texture2D.Apply();
-
-            var sprite = Sprite.Create(texture2D, new Rect(0, 0, texture2D.width, texture2D.height), Vector2.zero, 100);
-            img.sprite = sprite;
-            spr.sprite = sprite;
+            return horizontalDividerLines;
         }
 
-        private int GetSideMultiplier()
+        private SinGraph[] GenerateVerticalDividers(Vector2Int cutSIze)
+        {
+            SinGraph[] verticalDividerLines = new SinGraph[cutSIze.y - 1];
+
+            for (int i = 0; i < verticalDividerLines.Length; i++)
+            {
+                float a = (int)(Random.Range(0, maxSinPercentA) * baseCellSize.y);
+                a = Mathf.Max(minSinA, a);
+
+                float b = 1 / (pointsState.GetLength(0) / Random.Range(minSinB, maxSinB));
+
+                float c = Random.Range(0, Mathf.PI);
+                int offsetY = baseCellSize.y * (i + 1);
+                verticalDividerLines[i] = new SinGraph(a, b, c, offsetY);
+            }
+
+            foreach (var t in verticalDividerLines)
+                for (int y = 0; y < pointsState.GetLength(1); y++)
+                {
+                    int x = t.GetPoint(y);
+                    pointsState[x, y] = true;
+                }
+
+            return verticalDividerLines;
+        }
+
+        private const float maxSinB = 3 * Mathf.PI;
+
+        private int SideMultiplier()
         {
             return Random.Range(0, 2) == 0 ? -1 : 1;
-        }
-    }
-
-    /// f(x) = a sin(bx + c) + offsetY
-    public class SinGraph
-    {
-        private readonly float a;
-        private readonly float b;
-        private readonly float c;
-        private readonly int offsetY;
-
-        public SinGraph(float a, float b, float c, int offsetY)
-        {
-            this.a = a;
-            this.b = b;
-            this.c = c;
-            this.offsetY = offsetY;
-        }
-
-        public int GetPoint(int x)
-        {
-            return (int)(a * Mathf.Sin(b * x + c) + offsetY);
-        }
-
-        public override string ToString()
-        {
-            return $"f(x) = {a} sin({b}x)";
-        }
-    }
-
-    /// <summary>
-    ///x = Ox + r * cos(a)
-    ///y = Oy + r * sin(a)
-    /// Oy - center
-    ///
-    /// x^2 + (ay)^2 = r^2
-    /// r is "half width of ellipse"
-    /// height =  r / a
-    /// </summary>
-    public class EllipseGraph
-    {
-        public readonly Vector2Int center;
-        public readonly int r;
-        private readonly int a;
-
-        public EllipseGraph(Vector2Int center, int r, int a)
-        {
-            this.center = center;
-            this.r = r;
-            this.a = a;
-        }
-
-        public bool TryGetIntersectionPoints(int x, out Vector2Int[] points)
-        {
-            var normX = x - center.x;
-            if (normX == r)
-            {
-                points = new Vector2Int[1];
-                points[0] = new Vector2Int(normX, 0) + center;
-                return true;
-            }
-            else if (normX < r)
-            {
-                points = new Vector2Int[2];
-
-                int y = (int)(Mathf.Sqrt(r * r - normX * normX) / a);
-
-                Debug.LogError(y + center.y);
-                Debug.LogError(-y + center.y);
-                
-                points[0] = new Vector2Int(normX, y) + center;
-                points[1] = new Vector2Int(normX, -y) + center;
-
-                return true;
-            }
-
-            points = new Vector2Int[1];
-            return false;
         }
     }
 }

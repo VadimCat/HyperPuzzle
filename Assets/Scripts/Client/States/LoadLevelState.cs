@@ -78,7 +78,7 @@ namespace Client.States
             var levelPresenter =
                 new LevelPresenter(view, levelModel, screenNavigator, context.GetService<UpdateService>(), levelsConfig,
                     context.GetService<LevelsLoopProgress>(), context.GetService<AudioService>(),
-                    context.GetService<ICompliments>(), context.GetService<InputService>());
+                    context.GetService<ICompliments>());
 
             levelPresenter.BuildLevel();
 
